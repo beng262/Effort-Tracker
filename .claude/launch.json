@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "efor-demo", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:local"], "port": 3100 }
+  ]
+}

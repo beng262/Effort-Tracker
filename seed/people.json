@@ -1,0 +1,77 @@
+{
+  "_note": "Sample people for the demo (all fictional). The name is replaced by the real display name at first sign-in. 'alt' lists a second account in the other tenant for the same person.",
+  "people": [
+    {
+      "name": "Ece Arslan",
+      "email": "ece.arslan@alpha.example.com",
+      "tenant": "alpha",
+      "role": "Admin"
+    },
+    {
+      "name": "Kaan Özdemir",
+      "email": "kaan.ozdemir@alpha.example.com",
+      "tenant": "alpha",
+      "role": "Admin"
+    },
+    {
+      "name": "Emre Demir",
+      "email": "emre.demir@alpha.example.com",
+      "tenant": "alpha",
+      "role": "Admin",
+      "alt": [
+        {
+          "tenant": "beta",
+          "email": "emre.demir@beta.example.com"
+        }
+      ]
+    },
+    {
+      "name": "Cansu Kaya",
+      "email": "cansu.kaya@beta.example.com",
+      "tenant": "beta",
+      "role": "PM"
+    },
+    {
+      "name": "Barış Çelik",
+      "email": "baris.celik@beta.example.com",
+      "tenant": "beta",
+      "role": "Employee"
+    },
+    {
+      "name": "Defne Aksoy",
+      "email": "defne.aksoy@alpha.example.com",
+      "tenant": "alpha",
+      "role": "Employee"
+    },
+    {
+      "name": "Selim Erdem",
+      "email": "selim.erdem@beta.example.com",
+      "tenant": "beta",
+      "role": "Employee"
+    },
+    {
+      "name": "Murat Aydın",
+      "email": "murat.aydin@beta.example.com",
+      "tenant": "beta",
+      "role": "Employee"
+    },
+    {
+      "name": "Ozan Polat",
+      "email": "ozan.polat@beta.example.com",
+      "tenant": "beta",
+      "role": "Employee"
+    },
+    {
+      "name": "Mehmet Kurt",
+      "email": "mehmet.kurt@beta.example.com",
+      "tenant": "beta",
+      "role": "Employee"
+    },
+    {
+      "name": "Burak Yurt",
+      "email": "burak.yurt@beta.example.com",
+      "tenant": "beta",
+      "role": "Employee"
+    }
+  ]
+}

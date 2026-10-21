@@ -1,0 +1,43 @@
+{
+  "displayName": "Effort Tracker",
+  "signInAudience": "AzureADMultipleOrgs",
+  "web": {
+    "redirectUris": ["http://localhost:3000/auth/callback"]
+  },
+  "requiredResourceAccess": [
+    {
+      "resourceAppId": "00000003-0000-0000-c000-000000000000",
+      "resourceAccess": [
+        { "id": "f10e1f91-74ed-437f-a6fd-d6ae88e26c1f", "type": "Role" },
+        { "id": "5b567255-7703-4780-807c-7be8301ae99b", "type": "Role" },
+        { "id": "df021288-bdef-4463-88db-98f22de89214", "type": "Role" }
+      ]
+    }
+  ],
+  "appRoles": [
+    {
+      "id": "6f1b5d7e-3c4a-4e0a-9a51-0b2f1a7c1001",
+      "allowedMemberTypes": ["User"],
+      "displayName": "Employee",
+      "description": "Sees and edits their own effort.",
+      "value": "Employee",
+      "isEnabled": true
+    },
+    {
+      "id": "6f1b5d7e-3c4a-4e0a-9a51-0b2f1a7c1002",
+      "allowedMemberTypes": ["User"],
+      "displayName": "PM",
+      "description": "Manages projects and sees the team's effort on them.",
+      "value": "PM",
+      "isEnabled": true
+    },
+    {
+      "id": "6f1b5d7e-3c4a-4e0a-9a51-0b2f1a7c1003",
+      "allowedMemberTypes": ["User"],
+      "displayName": "Admin",
+      "description": "Sees everything and manages people and periods.",
+      "value": "Admin",
+      "isEnabled": true
+    }
+  ]
+}

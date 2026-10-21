@@ -1,0 +1,58 @@
+{
+  "name": "effort-tracker",
+  "version": "0.1.0",
+  "description": "AI-assisted effort tracking for technical teams: effort read from Excel, text or chat, tied to Planner tasks and ITSM tickets, confirmed by the person before anything is saved.",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "build": "tsc -p tsconfig.json && node infra/copy-sql.mjs",
+    "start": "node dist/server/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/server/migrate.ts",
+    "dev:local": "tsx src/dev/local.ts"
+  },
+  "author": "Bengi",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@azure/storage-blob": "^12.34.0",
+    "@fontsource/roboto": "^5.3.0",
+    "exceljs": "^4.4.0",
+    "express": "^5.3.0",
+    "jose": "^6.2.12",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.1.0",
+    "openai": "^7.32.0",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.23.1",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^26.6.5",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pdfkit": "^0.17.6",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beng262/effort-tracker-preview.git"
+  },
+  "keywords": [
+    "effort-tracking",
+    "timesheet",
+    "ai-assistant",
+    "planner",
+    "itsm",
+    "typescript",
+    "express",
+    "postgres"
+  ]
+}
