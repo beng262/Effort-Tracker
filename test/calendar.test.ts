@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testDb } from './testdb.js';
 import { buildApp } from '../src/server/app.js';
-import { InvalidGrant, openSecret, sealSecret, type CalendarApi, type GraphEvent } from '../src/server/calendar.js';
+import { guessProject, InvalidGrant, openSecret, sealSecret, type CalendarApi, type GraphEvent } from '../src/server/calendar.js';
 
 const ev = (id: string, subject: string | null, start: string, end: string, extra: Partial<GraphEvent> = {}): GraphEvent =>
   ({ id, subject, isAllDay: false, isCancelled: false, showAs: 'busy', start: { dateTime: `${start}.0000000` }, end: { dateTime: `${end}.0000000` }, ...extra });
@@ -112,13 +112,13 @@ describe('calendar meetings as effort', () => {
   });
 
   it('adds only the ticked meetings, with the times from the calendar, and never twice', async () => {
-    const body = { from: '2026-10-19', to: '2026-10-21', items: [{ id: 'e1', projectId }, { id: 'e2' }] };
+    const body = { from: '2026-10-19', to: '2026-10-21', items: [{ id: 'e1', projectId }, { id: 'e2', description: '  Ekip toplantısı (Birch ile)  ', customer: 'Birch' }] };
     const r = await (await ayse.call('POST', '/api/calendar/import', body)).json();
     expect(r).toEqual({ created: 2, skipped: 0 });
-    const rows = (await db.query(`SELECT description, work_date::text AS d, hours::float AS h, start_time::text AS s, status, project_id, category, external_ref FROM entries WHERE NOT deleted ORDER BY work_date`)).rows;
+    const rows = (await db.query(`SELECT description, customer, work_date::text AS d, hours::float AS h, start_time::text AS s, status, project_id, category, external_ref FROM entries WHERE NOT deleted ORDER BY work_date`)).rows;
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ description: 'Lisans Yönetimi haftalık toplantı', d: '2026-10-19', h: 1, s: '10:00:00', status: 'confirmed', project_id: projectId, category: 'Proje', external_ref: 'cal:e1' });
-    expect(rows[1]).toMatchObject({ description: 'Ekip toplantısı', h: 1.5, status: 'confirmed', project_id: null, category: 'İç Operasyon', external_ref: 'cal:e2' });
+    expect(rows[1]).toMatchObject({ description: 'Ekip toplantısı (Birch ile)', customer: 'Birch', h: 1.5, status: 'confirmed', project_id: null, category: 'İç Operasyon', external_ref: 'cal:e2' });
     // the list now shows them as added, and a second import adds nothing
     const again = await (await ayse.call('GET', '/api/calendar/meetings?from=2026-10-19&to=2026-10-21')).json();
     expect(again.meetings.filter((m: any) => m.imported).map((m: any) => m.id)).toEqual(['e1', 'e2']);
@@ -150,5 +150,27 @@ describe('calendar meetings as effort', () => {
     const r = await fetch(`${base}/api/calendar/status`);
     expect(r.status).toBe(401);
     expect((await fetch(`${base}/auth/calendar/connect`, { redirect: 'manual' })).status).toBe(302);
+  });
+});
+
+describe('guessing the project of a meeting', () => {
+  const projects = [
+    { id: 'p1', name: 'Birch Strateji Ekibi YZ Asistanı', customer: 'Birch' },
+    { id: 'p2', name: 'Lisans Yönetimi', customer: 'Acme' },
+    { id: 'p3', name: 'Kayın Çimento-Backup/Restore Otomizasyonu', customer: 'Kayın Çimento' },
+    { id: 'p4', name: 'Alder M365 Projesi', customer: 'Alder' },
+  ];
+  it('finds the project from shared distinctive words, not just the exact name', () => {
+    expect(guessProject('Birch Strateji AI Projesi Taskların Detaylandırılması & Risklerin Görüşülmesi', projects)?.id).toBe('p1');
+    expect(guessProject('Birch Strateji AI Asistanı Projesi Kickoff', projects)?.id).toBe('p1');
+    expect(guessProject('Lisans Yönetimi haftalık toplantı', projects)?.id).toBe('p2');
+    expect(guessProject('Kayın backup planlama', projects)?.id).toBe('p3'); // one long distinctive word
+    expect(guessProject('Alder toplantısı', projects)?.id).toBe('p4');
+  });
+  it('stays out of it when it cannot tell', () => {
+    expect(guessProject('Ekip toplantısı', projects)).toBeNull();
+    expect(guessProject('Günlük stand-up', projects)).toBeNull();
+    expect(guessProject('Proje toplantısı', projects)).toBeNull(); // only generic words
+    expect(guessProject('Strateji', [...projects, { id: 'p5', name: 'Strateji Danışmanlığı', customer: null }])).toBeNull(); // two projects share the word
   });
 });

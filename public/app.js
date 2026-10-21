@@ -239,7 +239,7 @@ async function weekPage() {
   for (const d of w.days) {
     host.append(h('div', { class: 'day' + (d.missing ? ' missing' : '') + (d.date === todayIso() ? ' today' : '') },
       h('h3', {}, h('span', {}, `${DAYS[d.weekday]} ${fmtDate(d.date)}`), h('span', {}, d.missing ? 'efor girilmemiş' : `${fmtH(d.hours)} sa`, d.overtime > 0 ? h('span', { class: 'chip ot' }, `ekstra mesai ${fmtH(d.overtime)} sa`) : null, d.dayOff && d.entries.length ? h('span', { class: 'chip' }, 'mesai dışı gün') : null)),
-      d.entries.length ? entriesTable(d.entries, () => route(), onPick) : null));
+      d.entries.length ? entriesTable(d.entries, () => route(), onPick, { projects: myProjects, customers }) : null));
   }
   // An empty week explains how it gets filled; the task list below is the fastest way.
   const empty = w.days.every((d) => d.entries.length === 0);
@@ -258,7 +258,7 @@ async function weekPage() {
     h('div', { class: 'stat grow' }, h('div', { class: 'progress', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: `width:${pct}%` })), h('span', { class: 'muted' }, `Haftanın %${pct}’i tamam`)),
     h('div', { class: 'stat' }, h('span', { class: 'big' }, fmtH(w.overtime || 0)), h('span', { class: 'muted' }, `ekstra mesai (${cfg.workStart}–${cfg.workEnd} dışı)`)),
     h('div', { class: 'stat' }, h('span', { class: 'big ' + (missing ? 'warnc' : 'okc') }, missing ? String(missing) : '✓'), h('span', { class: 'muted' }, missing ? 'eksik gün' : 'eksik gün yok')));
-  add(h('h1', {}, `Merhaba, ${me.name.split(' ')[0]}`), summary, how, host, calendarCard(w.start, calStatus, myProjects), myTasksCard(w.start, todayIso(), myTasks), manualForm(w.start, myProjects, customers));
+  add(h('h1', {}, `Merhaba, ${me.name.split(' ')[0]}`), summary, how, host, calendarCard(w.start, calStatus, myProjects, customers), myTasksCard(w.start, todayIso(), myTasks), manualForm(w.start, myProjects, customers));
 }
 
 
@@ -271,9 +271,11 @@ async function weekPage() {
 function customerField(list, { value = '', placeholder = 'Müşteri', onchange = null } = {}) {
   const id = 'cl' + Math.random().toString(36).slice(2, 8);
   const input = h('input', { placeholder, list: id, value, autocomplete: 'off', size: 22 });
-  const dl = h('datalist', { id }, list.map((c) => h('option', { value: c.name })));
+  // "İç Çalışma" (internal work) is always a valid answer, so it is offered and never suggested as a new customer.
+  const INTERNAL = 'iç çalışma';
+  const dl = h('datalist', { id }, [{ name: 'İç Çalışma' }, ...list].map((c) => h('option', { value: c.name })));
   const addBtn = h('button', { type: 'button', class: 'link-btn add-cust', hidden: true });
-  const known = () => list.some((c) => c.name.toLowerCase() === input.value.trim().toLowerCase());
+  const known = () => input.value.trim().toLocaleLowerCase('tr') === INTERNAL || list.some((c) => c.name.toLowerCase() === input.value.trim().toLowerCase());
   const refresh = () => { const v = input.value.trim(); addBtn.hidden = !v || known(); addBtn.textContent = `+ “${v}” müşterisini ekle`; };
   input.addEventListener('input', refresh);
   input.addEventListener('change', () => { if (onchange && (!input.value.trim() || known())) onchange(input.value.trim()); });
@@ -339,10 +341,87 @@ async function removeEntries(ids, refresh) {
   } catch (x) { toast(x.message, 'err'); }
 }
 
-function entriesTable(entries, refresh, onPick = () => {}) {
+/** Hours between two HH:MM times, or null when they do not make a range. */
+function rangeHours(start, end) {
+  if (!start || !end) return null;
+  const [a, z] = [start, end].map((x) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5)));
+  return z > a ? Math.round(((z - a) / 60) * 100) / 100 : null;
+}
+
+/**
+ * Everything about a saved row can be changed here: its name (description), category, customer, project, product,
+ * date and times. Only what really changed is sent, so a project the person is no longer on is never re-checked.
+ */
+function entryEditor(e, { projects = [], customers = [] }, close, refresh) {
+  const clock = (t) => (t ? t.slice(0, 5) : '');
+  const fld = (label, el) => h('label', { class: 'fld' }, h('span', { class: 'muted small' }, label), el);
+  const desc = h('input', { value: e.description || '', class: 'grow', 'aria-label': 'Açıklama (ad)', placeholder: 'Açıklama' });
+  const cat = h('select', { 'aria-label': 'Kategori' }, h('option', { value: '' }, 'Kategori: yok'),
+    CATEGORIES.map((c) => h('option', { value: c, selected: e.category === c }, c)),
+    e.category && !CATEGORIES.includes(e.category) ? h('option', { value: e.category, selected: true }, e.category) : null);
+  const custF = customerField(customers, { value: e.customer || '', placeholder: 'Müşteri / İç Çalışma' });
+  const proj = h('select', { 'aria-label': 'Proje' }, h('option', { value: '' }, 'Proje: yok'),
+    e.project_id && !projects.some((p) => p.id === e.project_id) ? h('option', { value: e.project_id, selected: true }, 'Şu anki proje') : null,
+    projects.map((p) => h('option', { value: p.id, selected: e.project_id === p.id }, p.name)));
+  const adder = projectAdder(proj, customers, (r) => projects.push({ id: r.id, name: r.name, customer: null }));
+  const work = h('input', { value: e.work_item || '', placeholder: 'Proje / SLA / Fırsat adı', 'aria-label': 'Proje / iş adı', size: 24 });
+  const product = h('input', { value: e.product || '', placeholder: 'Ürün / Teknoloji', 'aria-label': 'Ürün / Teknoloji', size: 18 });
+  const date = h('input', { type: 'date', value: e.work_date || '', 'aria-label': 'Tarih' });
+  const from = h('input', { type: 'time', value: clock(e.start_time), 'aria-label': 'Başlangıç' });
+  const till = h('input', { type: 'time', value: clock(e.end_time), 'aria-label': 'Bitiş' });
+  const hours = h('input', { value: fmtH(e.hours), size: 8, 'aria-label': 'Süre' });
+
+  // Choosing a project fills in what follows from it, unless the person has already typed something of their own.
+  let prev = projects.find((x) => x.id === e.project_id) || null;
+  proj.addEventListener('change', () => {
+    const p = projects.find((x) => x.id === proj.value) || null;
+    const c = custF.input.value.trim();
+    if (p) {
+      if (p.customer && (!c || c === 'İç Çalışma' || c === (prev?.customer || ''))) { custF.input.value = p.customer; custF.input.dispatchEvent(new Event('input')); }
+      if (!work.value.trim() || work.value.trim() === (prev?.name || '')) work.value = p.name;
+      if (!cat.value || cat.value === 'İç Operasyon') cat.value = 'Proje';
+    }
+    prev = p;
+  });
+
+  const save = h('button', { class: 'pri', onclick: async () => {
+    const body = {};
+    const text = (k, v, old) => { if (v !== (old || '')) body[k] = v || null; };
+    if (desc.value.trim() !== (e.description || '').trim()) body.description = desc.value.trim();
+    text('category', cat.value, e.category);
+    text('customer', custF.input.value.trim(), e.customer);
+    text('workItem', work.value.trim(), e.work_item);
+    text('product', product.value.trim(), e.product);
+    if (proj.value !== (e.project_id || '')) body.projectId = proj.value || null;
+    if (date.value && date.value !== e.work_date) body.date = date.value;
+    if (from.value !== clock(e.start_time)) body.start = from.value || null;
+    if (till.value !== clock(e.end_time)) body.end = till.value || null;
+    const hv = hours.value.trim();
+    if (hv !== fmtH(e.hours)) body.hours = hv;
+    else if (body.start !== undefined || body.end !== undefined) { const rh = rangeHours(from.value, till.value); if (rh !== null) body.hours = rh; }
+    if (!Object.keys(body).length) { toast('Değişiklik yok.'); close(); return; }
+    save.disabled = true;
+    try { await api('PATCH', `/api/entries/${e.id}`, body); toast('Satır güncellendi.'); refresh(); }
+    catch (x) { toast(x.message, 'err'); save.disabled = false; }
+  } }, 'Kaydet');
+
+  return h('div', { class: 'entry-edit' },
+    h('div', { class: 'row' }, fld('Açıklama (ad)', desc)),
+    h('div', { class: 'row' }, fld('Kategori', cat), fld('Müşteri', custF.el), fld('Proje', proj), fld('Proje / iş adı', work), fld('Ürün / Teknoloji', product)),
+    h('div', { class: 'row' }, fld('Tarih', date), fld('Başlangıç', from), fld('Bitiş', till), fld('Süre', hours)),
+    adder,
+    h('div', { class: 'row' }, save, h('button', { onclick: close }, 'Vazgeç')));
+}
+
+function entriesTable(entries, refresh, onPick = () => {}, lists = {}) {
   const t = h('table', {}, h('tr', {}, h('th', { class: 'chk' }), ...['Saat', 'Açıklama', 'Bağlantı', 'Durum', ''].map((x, i) => h('th', { class: i === 0 ? 'num' : '' }, x))));
   for (const e of entries) {
     const box = h('input', { type: 'checkbox', 'aria-label': 'Seç', checked: picked.has(e.id), onchange: () => { box.checked ? picked.add(e.id) : picked.delete(e.id); onPick(); } });
+    const editRow = h('tr', { class: 'editrow', hidden: true }, h('td', { colspan: 6 }));
+    const toggle = () => {
+      if (!editRow.firstChild.firstChild) editRow.firstChild.append(entryEditor(e, lists, () => { editRow.hidden = true; }, refresh));
+      editRow.hidden = !editRow.hidden;
+    };
     t.append(h('tr', {},
       h('td', { class: 'chk' }, box),
       h('td', { class: 'num' }, fmtH(e.hours), Number(e.overtime_hours) > 0 ? h('div', { class: 'muted small' }, `ekstra ${fmtH(Number(e.overtime_hours))}`) : null),
@@ -350,8 +429,8 @@ function entriesTable(entries, refresh, onPick = () => {}) {
       h('td', {}, e.link_id ? linkChip(e.link_kind, linkLabel(e.link_kind) + ' ' + e.link_id.slice(0, 10)) : h('span', { class: 'muted' }, '–')),
       h('td', {}, h('span', { class: 'chip ' + (e.status === 'draft' ? 'warn' : 'good') }, e.status === 'draft' ? 'taslak' : 'kayıtlı'), flagChips(e.flags)),
       h('td', {},
-        h('button', { onclick: async () => { const v = prompt('Yeni efor (örn. 2,5 saat)', fmtH(e.hours)); if (v) { try { await api('PATCH', `/api/entries/${e.id}`, { hours: v }); refresh(); } catch (x) { toast(x.message, 'err'); } } } }, 'Düzenle'), ' ',
-        h('button', { class: 'danger', onclick: () => removeEntries([e.id], refresh) }, 'Sil'))));
+        h('button', { disabled: e.status === 'approved', title: e.status === 'approved' ? 'Onaylanmış kayıt değiştirilemez' : 'Ad, kategori, müşteri, proje, saat ve süreyi düzenle', onclick: toggle }, 'Düzenle'), ' ',
+        h('button', { class: 'danger', onclick: () => removeEntries([e.id], refresh) }, 'Sil'))), editRow);
   }
   return h('div', { class: 'scroll' }, t);
 }
@@ -567,11 +646,11 @@ const GUIDE = [
   { id: 'hafta', icon: 'calendar', title: 'Haftam', role: 'Herkes', short: 'Haftalık eforunuzu görür, doldurur ve düzeltirsiniz.',
     what: 'Haftam, o haftaki çalışmanızın tamamını tek ekranda gösterir. Üstteki dört kutu haftanın özetidir: toplam saat (günlük 8 saat × 5 gün = 40 saat hedef), haftanın yüzde kaçının tamamlandığı, ekstra mesai saatiniz ve eforu girilmemiş gün sayısı.',
     steps: [
-      ['Takvimden toplantılar: ', 'Takvim bağlantısı açıksa “Takvimimi bağla” ile Outlook / Teams takviminizi bir kez bağlayın (yalnızca kendi takviminiz, salt okuma). “Bu haftanın toplantılarını getir” toplantıları listeler; istediklerinizi seçip proje ve kategori verin, “Seçilenleri efora ekle”ye basın. Süre ve saatler takvimden gelir; eklenmiş toplantı ikinci kez eklenmez.'],
+      ['Takvimden toplantılar: ', 'Takvim bağlantısı açıksa “Takvimimi bağla” ile Outlook / Teams takviminizi bir kez bağlayın (yalnızca kendi takviminiz, salt okuma). “Bu haftanın toplantılarını getir” toplantıları listeler; istediklerinizi seçin; toplantının adını, projesini, müşterisini ve kategorisini eklemeden önce değiştirebilirsiniz, sonra “Seçilenleri efora ekle”ye basın. Süre ve saatler takvimden gelir; eklenmiş toplantı ikinci kez eklenmez.'],
       ['Görevlerim: ', 'Size atanmış Planner görevleri, proje planı görevleri ve açık ITSM biletleri listelenir. Saati yazıp "Ekle"ye basmanız yeter; kayıt hemen haftanıza işlenir.'],
       ['Elle ekle: ', 'Tarih, isteğe bağlı başlangıç ve bitiş saati, süre, kategori, müşteri, proje ve açıklamayı yazıp "Kaydet"e basın. Başlangıç ve bitişi yazarsanız süre kendiliğinden hesaplanır. Müşteri kutusuna yazarken ITSM’deki müşteriler önerilir; listede yoksa "+ müşterisini ekle", projeniz yoksa "+ Yeni proje ekle…" seçin.'],
       ['Dosya ya da asistan: ', 'Kayıtları dosyadan (Dosyadan Ekle) veya yazarak (Asistan) da ekleyebilirsiniz; ikisi de önce size taslak gösterir.'],
-      ['Haftalık tablo: ', 'Kayıtlar günlere göre listelenir. "Düzenle" ile saat, tarih ve açıklamayı değiştirir, "Sil" ile kaldırırsınız. Kutuları işaretleyip birden çok kaydı birlikte silebilirsiniz. "Önceki", "Sonraki" ve "Bu hafta" ile haftalar arasında gezinin.'],
+      ['Haftalık tablo: ', 'Kayıtlar günlere göre listelenir. "Düzenle" bir düzenleme formu açar: açıklamayı (adı), kategoriyi, müşteriyi, projeyi, proje / iş adını, ürünü, tarihi, başlangıç-bitiş saatini ve süreyi değiştirebilirsiniz (proje seçince müşteri ve iş adı kendiliğinden dolar). "Sil" ile kaldırırsınız. Kutuları işaretleyip birden çok kaydı birlikte silebilirsiniz. "Önceki", "Sonraki" ve "Bu hafta" ile haftalar arasında gezinin.'],
     ],
     tips: ['Eforu girilmemiş günler sarı çizgiyle işaretlenir.', 'Mesai 09:00–18:00 arasıdır. Bu saatlerin dışı, hafta sonu ve resmî tatiller "ekstra mesai" sayılır. Yalnızca süre yazarsanız günün ilk 9 saati normal, fazlası ekstra mesai olur; başlangıç ve bitiş yazarsanız bölünme saatlere göre yapılır.', 'Onaylanmış ya da kapatılmış döneme ait kayıtlar değiştirilemez.'] },
   { id: 'dosya', icon: 'filePlus', title: 'Dosyadan Ekle', role: 'Herkes', short: 'Excel, CSV ya da Not Defteri dosyasından toplu efor ekleyin.',
@@ -1277,7 +1356,7 @@ function planBlock(p) {
  * Calendar meetings as effort: connect the calendar once (read-only, your own calendar), fetch the week's meetings,
  * tick the ones to add. Nothing is saved before the click, and a meeting already added is shown as added.
  */
-function calendarCard(weekStart, status, projects) {
+function calendarCard(weekStart, status, projects, customers = []) {
   if (!status?.enabled) return null;
   const head = h('h2', {}, 'Takvimden toplantılar');
   if (!status.connected) {
@@ -1298,18 +1377,32 @@ function calendarCard(weekStart, status, projects) {
     if (!r.meetings.length) { put(out, h('p', { class: 'muted' }, `${fmtDate(weekStart)} – ${fmtDate(to)} arasında eklenecek toplantı yok.` + (r.skipped ? ` (${r.skipped} olay listelenmedi: iptal, tüm gün, boşta ya da reddedilmiş.)` : ''))); return; }
     const rows = r.meetings.map((m) => {
       const box = h('input', { type: 'checkbox', checked: !m.imported, disabled: m.imported, 'aria-label': m.subject });
+      const name = h('input', { value: m.subject, class: 'grow', 'aria-label': 'Toplantı adı (değiştirebilirsiniz)', title: 'Efora bu adla eklenir; değiştirebilirsiniz' });
       const proj = h('select', { 'aria-label': 'Proje', disabled: m.imported }, h('option', { value: '' }, 'Proje: yok'), projects.map((p) => h('option', { value: p.id, selected: p.id === m.projectId }, p.name)));
       const cat = h('select', { 'aria-label': 'Kategori', disabled: m.imported }, CATEGORIES.map((c) => h('option', { value: c, selected: c === m.category }, c)));
-      proj.addEventListener('change', () => { if (proj.value && cat.value === 'İç Operasyon') cat.value = 'Proje'; });
+      const guess = projects.find((p) => p.id === m.projectId);
+      const cust = customerField(customers, { value: guess?.customer || '', placeholder: 'Müşteri / İç Çalışma' });
+      let prev = guess || null;
+      proj.addEventListener('change', () => {
+        const p = projects.find((x) => x.id === proj.value) || null;
+        const c = cust.input.value.trim();
+        if (p) {
+          if (p.customer && (!c || c === 'İç Çalışma' || c === (prev?.customer || ''))) { cust.input.value = p.customer; cust.input.dispatchEvent(new Event('input')); }
+          if (cat.value === 'İç Operasyon') cat.value = 'Proje';
+        }
+        prev = p;
+      });
       box.addEventListener('change', () => count());
       const day = DAYS[(new Date(m.date + 'T00:00:00Z').getUTCDay() + 6) % 7];
+      const meta = [m.online ? 'çevrimiçi' : null, m.organizer, m.attendees ? `${m.attendees} katılımcı` : null].filter(Boolean).join(' · ');
       const tr = h('tr', {}, h('td', {}, box), h('td', {}, `${day} ${fmtDate(m.date).slice(0, 5)}`), h('td', {}, `${m.start}–${m.end}`),
-        h('td', {}, m.subject, h('div', { class: 'muted small' }, [m.online ? 'çevrimiçi' : null, m.organizer, m.attendees ? `${m.attendees} katılımcı` : null].filter(Boolean).join(' · '))),
-        h('td', { class: 'num' }, fmtH(m.hours)), h('td', {}, m.imported ? h('span', { class: 'chip good' }, 'eklendi') : proj), h('td', {}, m.imported ? null : cat));
-      return { m, box, proj, cat, tr };
+        h('td', {}, m.imported ? m.subject : name, meta ? h('div', { class: 'muted small' }, meta) : null),
+        h('td', { class: 'num' }, fmtH(m.hours)), h('td', {}, m.imported ? h('span', { class: 'chip good' }, 'eklendi') : proj),
+        h('td', {}, m.imported ? null : cust.el), h('td', {}, m.imported ? null : cat));
+      return { m, box, name, proj, cat, cust, tr };
     });
     const addBtn = h('button', { class: 'pri', onclick: () => guard(out, async () => {
-      const items = rows.filter((x) => x.box.checked && !x.m.imported).map((x) => ({ id: x.m.id, projectId: x.proj.value || null, category: x.cat.value || null }));
+      const items = rows.filter((x) => x.box.checked && !x.m.imported).map((x) => ({ id: x.m.id, projectId: x.proj.value || null, category: x.cat.value || null, description: x.name.value.trim() || null, customer: x.cust.input.value.trim() || null }));
       if (!items.length) return;
       addBtn.disabled = true;
       const res = await api('POST', '/api/calendar/import', { from: weekStart, to, items });
@@ -1317,11 +1410,11 @@ function calendarCard(weekStart, status, projects) {
     }) }, 'Seçilenleri efora ekle');
     const count = () => { const n = rows.filter((x) => x.box.checked && !x.m.imported).length; addBtn.textContent = `Seçilenleri efora ekle (${n})`; addBtn.disabled = n === 0; };
     count();
-    put(out, h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, ...['', 'Gün', 'Saat', 'Toplantı', 'Süre', 'Proje', 'Kategori'].map((x) => h('th', {}, x))), rows.map((x) => x.tr))),
+    put(out, h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, ...['', 'Gün', 'Saat', 'Toplantı (adını değiştirebilirsiniz)', 'Süre', 'Proje', 'Müşteri', 'Kategori'].map((x) => h('th', {}, x))), rows.map((x) => x.tr))),
       h('div', { class: 'row' }, addBtn, r.skipped ? h('span', { class: 'muted small' }, `${r.skipped} olay listelenmedi (iptal, tüm gün, boşta ya da reddedilmiş).`) : null));
   };
   return h('div', { class: 'card calcard' }, head,
-    h('p', { class: 'muted' }, to < weekStart ? 'Bu hafta henüz başlamadı.' : `${fmtDate(weekStart)} – ${fmtDate(to)} arasındaki toplantıları getirip istediklerinizi ekleyin. Eklediğiniz toplantı ikinci kez eklenmez.`),
+    h('p', { class: 'muted' }, to < weekStart ? 'Bu hafta henüz başlamadı.' : `${fmtDate(weekStart)} – ${fmtDate(to)} arasındaki toplantıları getirip istediklerinizi ekleyin; adını, projesini ve müşterisini eklemeden önce değiştirebilirsiniz. Eklediğiniz toplantı ikinci kez eklenmez.`),
     h('div', { class: 'row' }, fetchBtn, h('button', { class: 'link-btn', onclick: async () => {
       if (!confirm('Takvim bağlantısı kaldırılsın mı? Daha önce eklenen eforlar silinmez.')) return;
       try { await api('DELETE', '/api/calendar'); toast('Takvim bağlantısı kaldırıldı.'); route(); } catch (e) { toast(e.message, 'err'); }

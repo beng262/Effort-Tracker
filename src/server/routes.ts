@@ -68,14 +68,18 @@ export function apiRouter(ctx: Ctx, graph: Graph): Router {
 
   r.post('/api/entries', wrap(async (req, res) => {
     const u = me(req);
-    const e = await createEntry(ctx, u.employeeId, u.dayHours, entryBody.parse(req.body));
+    const body = entryBody.parse(req.body);
+    if (body.projectId) await assertAssigned(u, body.projectId);
+    const e = await createEntry(ctx, u.employeeId, u.dayHours, body);
     const saved = await confirmEntries(db, u.employeeId, [e.id]);
     res.status(201).json({ ...(await db.query<EntryRow>('SELECT * FROM entries WHERE id=$1', [e.id])).rows[0], saved: saved === 1 });
   }));
 
   r.patch('/api/entries/:id', wrap(async (req, res) => {
     const u = me(req);
-    res.json(await updateEntry(ctx, u.employeeId, uuid.parse(req.params.id), entryBody.parse(req.body), u.dayHours));
+    const body = entryBody.parse(req.body);
+    if (body.projectId) await assertAssigned(u, body.projectId);
+    res.json(await updateEntry(ctx, u.employeeId, uuid.parse(req.params.id), body, u.dayHours));
   }));
 
   r.delete('/api/entries/:id', wrap(async (req, res) => {

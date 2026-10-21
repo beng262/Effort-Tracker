@@ -354,3 +354,20 @@ describe('edit a project, and attach a file to a project in the assistant', () =
     expect(refused.status).toBe(403);
   });
 });
+
+describe('editing a saved row', () => {
+  it('changes name, customer, category, project and times, and only onto a project the person is on', async () => {
+    const made = await ayse.call('POST', '/api/entries', { date: '2026-10-07', hours: 2, description: 'Toplantı', category: 'İç Operasyon', customer: 'İç Çalışma' });
+    expect(made.status).toBe(201);
+    const id = made.body.id;
+    const r = await ayse.call('PATCH', `/api/entries/${id}`, { description: 'Müşteri toplantısı: kapsam', category: 'Proje', customer: 'Acme', projectId, workItem: 'Lisans Yönetimi', product: 'Microsoft 365', date: '2026-10-08', start: '10:00', end: '11:30', hours: 1.5 });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ description: 'Müşteri toplantısı: kapsam', category: 'Proje', customer: 'Acme', project_id: projectId, work_item: 'Lisans Yönetimi', product: 'Microsoft 365', work_date: '2026-10-08', hours: 1.5, status: 'confirmed' });
+    const elsewhere = (await cansu.call('POST', '/api/projects', { name: 'Başkasının Projesi' })).body.id;
+    expect((await ayse.call('PATCH', `/api/entries/${id}`, { projectId: elsewhere })).status).toBe(403);
+    expect((await ayse.call('POST', '/api/entries', { date: '2026-10-07', hours: 1, projectId: elsewhere })).status).toBe(403);
+    expect((await mehmet.call('PATCH', `/api/entries/${id}`, { description: 'Hack' })).status).toBe(404); // someone else's row
+    expect((await ayse.call('PATCH', `/api/entries/${id}`, { projectId: null })).body.project_id).toBeNull(); // taking it off a project is always fine
+  });
+});
+

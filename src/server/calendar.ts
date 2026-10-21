@@ -153,7 +153,7 @@ export interface Meeting {
 const hm = (s: string) => s.slice(11, 16);
 const minutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 
-interface MyProject { id: string; name: string; customer: string | null }
+export interface MyProject { id: string; name: string; customer: string | null }
 
 async function myProjects(db: Db, u: User): Promise<MyProject[]> {
   return atLeast(u, 'PM')
@@ -161,11 +161,27 @@ async function myProjects(db: Db, u: User): Promise<MyProject[]> {
     : (await db.query<MyProject>(`SELECT p.id, p.name, p.customer FROM projects p JOIN employee_projects ep ON ep.project_id = p.id WHERE ep.employee_id=$1 AND p.active ORDER BY p.name`, [u.employeeId])).rows;
 }
 
-/** A meeting whose title contains exactly one of the person's project names is offered for that project. */
-function guessProject(subject: string, projects: MyProject[]): MyProject | null {
-  const s = fold(subject);
-  const hit = projects.filter((p) => p.name.trim().length >= 3 && s.includes(fold(p.name)));
-  return hit.length === 1 ? hit[0] : null;
+/** Words that say little about which project a meeting belongs to. */
+const GENERIC = new Set(['proje', 'projesi', 'projeler', 'toplanti', 'toplantisi', 'ekibi', 'ekip', 'gorusme', 'gorusmesi', 'haftalik', 'gunluk', 'genel', 'sunum', 'planlama']);
+const words = (s: string) => new Set(fold(s).split(/[^a-z0-9]+/).filter((t) => t.length >= 4 && !GENERIC.has(t)));
+
+/**
+ * The project a meeting most likely belongs to: the title contains exactly one project name, or shares the most
+ * distinctive words with exactly one project name ("Birch Strateji AI Projesi …" finds "Birch Strateji Ekibi YZ Asistanı").
+ * One shared word is enough only when it is a long word that no other project name contains.
+ */
+export function guessProject(subject: string, projects: MyProject[]): MyProject | null {
+  const whole = projects.filter((p) => p.name.trim().length >= 3 && fold(subject).includes(fold(p.name)));
+  if (whole.length) return whole.length === 1 ? whole[0] : null;
+  const sw = words(subject);
+  const scored = projects.map((p) => ({ p, shared: [...words(p.name)].filter((t) => sw.has(t)) })).filter((x) => x.shared.length > 0);
+  if (!scored.length) return null;
+  const best = Math.max(...scored.map((x) => x.shared.length));
+  const top = scored.filter((x) => x.shared.length === best);
+  if (top.length !== 1) return null;
+  if (best >= 2) return top[0].p;
+  const w = top[0].shared[0];
+  return w.length >= 5 && projects.filter((p) => words(p.name).has(w)).length === 1 ? top[0].p : null;
 }
 
 export async function listMeetings(ctx: Ctx, u: User, from: string, to: string): Promise<{ meetings: Meeting[]; skipped: number }> {
@@ -195,7 +211,7 @@ export async function listMeetings(ctx: Ctx, u: User, from: string, to: string):
   return { meetings, skipped };
 }
 
-export async function importMeetings(ctx: Ctx, u: User, from: string, to: string, items: { id: string; projectId?: string | null; category?: string | null }[]): Promise<{ created: number; skipped: number }> {
+export async function importMeetings(ctx: Ctx, u: User, from: string, to: string, items: { id: string; projectId?: string | null; category?: string | null; description?: string | null; customer?: string | null }[]): Promise<{ created: number; skipped: number }> {
   // The server re-reads the meetings, so times and titles always come from the calendar and never from the browser.
   const { meetings } = await listMeetings(ctx, u, from, to);
   const projects = await myProjects(ctx.db, u);
@@ -206,8 +222,9 @@ export async function importMeetings(ctx: Ctx, u: User, from: string, to: string
     const project = it.projectId ? projects.find((p) => p.id === it.projectId) : null;
     if (it.projectId && !project) throw new EntryError('Bu proje size atanmamış', 403);
     const e = await createEntry(ctx, u.employeeId, u.dayHours, {
-      date: m.date, start: m.start, end: m.end, description: m.subject, projectId: project?.id ?? null,
-      category: it.category ?? (project ? 'Proje' : 'İç Operasyon'), customer: project?.customer ?? (project ? null : 'İç Çalışma'), workItem: project?.name ?? null,
+      date: m.date, start: m.start, end: m.end, description: it.description?.trim() ? it.description.trim().slice(0, 1000) : m.subject, projectId: project?.id ?? null,
+      category: it.category ?? (project ? 'Proje' : 'İç Operasyon'),
+      customer: it.customer?.trim() ? it.customer.trim() : (project?.customer ?? (project ? null : 'İç Çalışma')), workItem: project?.name ?? null,
     });
     try {
       await ctx.db.query(`UPDATE entries SET external_ref=$2, source='takvim', source_text=$3 WHERE id=$1`, [e.id, `cal:${m.id}`, m.subject]);
@@ -297,7 +314,7 @@ export function calendarRouter(ctx: Ctx): Router {
 
   r.post('/api/calendar/import', requireUser, wrap(async (req, res) => {
     if (!on()) throw new EntryError('Takvim bağlantısı bu ortamda açık değil.', 404);
-    const b = z.object({ from: isoDate, to: isoDate, items: z.array(z.object({ id: z.string().min(1).max(500), projectId: z.string().uuid().nullable().optional(), category: z.string().max(60).nullable().optional() })).min(1).max(100) }).parse(req.body);
+    const b = z.object({ from: isoDate, to: isoDate, items: z.array(z.object({ id: z.string().min(1).max(500), projectId: z.string().uuid().nullable().optional(), category: z.string().max(60).nullable().optional(), description: z.string().max(1000).nullable().optional(), customer: z.string().max(300).nullable().optional() })).min(1).max(100) }).parse(req.body);
     if (b.to < b.from || b.to > addDays(b.from, 31)) throw new EntryError('Tarih aralığı en fazla 31 gün olabilir.');
     res.json(await importMeetings(ctx, me(req), b.from, b.to, b.items));
   }));

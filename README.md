@@ -24,6 +24,7 @@
 ## Features
 
 - **Chat assistant with fixed tools.** It can look up your effort, list tickets, draft rows and (for project managers) propose plan changes. It never writes by itself: every change is a *proposal card* with an explicit apply button. Numbers in its answers are checked against what the tools returned, and there is a prompt-injection test.
+- **Edit any saved row.** Name, category, customer, project, product, date and times can all be changed after saving; choosing a project fills in the customer and the work name unless you typed your own. Calendar meetings can be renamed and re-assigned before they are added, and the project is guessed from shared words in the title.
 - **Files in the chat.** Attach a file and choose which project it belongs to; every row is then linked to that project.
 - **Projects.** Cards with team, plan and task status; create from a Planner plan (or one project per plan in bulk), edit name/customer/code, link effort to plan tasks. Merging several plans into one project asks for confirmation.
 - **Planner sync.** Tasks of linked plans are cached and offered when entering effort ("Görevlerim"). Finished tasks and closed tickets are hidden.

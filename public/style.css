@@ -540,5 +540,13 @@ select[multiple] { padding: 6px; }
 .calcard table td.num { text-align: right; }
 .calcard select { max-width: 200px; }
 
+/* editing a saved row */
+tr.editrow > td { background: var(--surface-2, #f4f7fa); padding: 12px; }
+.entry-edit { display: grid; gap: 10px; }
+.entry-edit .row { align-items: flex-end; flex-wrap: wrap; }
+.entry-edit .fld { display: grid; gap: 3px; }
+.entry-edit .fld select, .entry-edit .fld input { max-width: 240px; }
+.calcard td input.grow { min-width: 220px; width: 100%; }
+
 /* text wordmark inside the logo svg */
 .logo text.logo-word { font-family: var(--display, system-ui); letter-spacing: -.01em; }
