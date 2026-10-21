@@ -29,8 +29,11 @@
 - **Planner sync.** Tasks of linked plans are cached and offered when entering effort ("Görevlerim"). Finished tasks and closed tickets are hidden.
 - **Project plans from Excel.** Import a plan sheet (sections, owners, dates, status); a project manager can describe a change in words and get a list of edits to apply.
 - **ITSM tickets.** A read-only connector lists open tickets per person and customer, with live detail on demand. Customers come from tickets plus a small "add customer" box.
+- **Calendar meetings as effort.** Connect your own calendar once (delegated, read-only Microsoft Graph permission), fetch the week's meetings, tick the ones to add and pick project and category. Times come from the calendar; a meeting is never added twice; cancelled, all-day, free and declined events are left out. The refresh token is stored sealed (AES-256-GCM). Off unless `CALENDAR_ENABLED=1`; the demo uses a pretend calendar.
 - **Roles.** Employee, project manager and admin see different slices: a PM sees the effort of people on their own projects, an admin sees everything.
 - **Dark and light theme** and a responsive layout.
+
+![Calendar meetings](docs/screenshots/07-calendar.jpg)
 
 ![Dark theme](docs/screenshots/06-week-dark.jpg)
 

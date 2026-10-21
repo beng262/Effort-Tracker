@@ -217,7 +217,7 @@ let weekDate = todayIso();
 
 async function weekPage() {
   // The three answers do not depend on each other, so they are asked for together.
-  const [w, myTasks, myProjects, cfg, customers] = await Promise.all([api('GET', `/api/week?date=${weekDate}`), api('GET', '/api/my-tasks'), api('GET', '/api/projects'), api('GET', '/api/settings'), api('GET', '/api/customers')]);
+  const [w, myTasks, myProjects, cfg, customers, calStatus] = await Promise.all([api('GET', `/api/week?date=${weekDate}`), api('GET', '/api/my-tasks'), api('GET', '/api/projects'), api('GET', '/api/settings'), api('GET', '/api/customers'), api('GET', '/api/calendar/status').catch(() => ({ enabled: false }))]);
   const host = h('div', { class: 'card' });
   const nav = h('div', { class: 'row' },
     h('button', { onclick: () => { weekDate = addDays(w.start, -7); route(); } }, '‹ Önceki'),
@@ -258,7 +258,7 @@ async function weekPage() {
     h('div', { class: 'stat grow' }, h('div', { class: 'progress', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: `width:${pct}%` })), h('span', { class: 'muted' }, `Haftanın %${pct}’i tamam`)),
     h('div', { class: 'stat' }, h('span', { class: 'big' }, fmtH(w.overtime || 0)), h('span', { class: 'muted' }, `ekstra mesai (${cfg.workStart}–${cfg.workEnd} dışı)`)),
     h('div', { class: 'stat' }, h('span', { class: 'big ' + (missing ? 'warnc' : 'okc') }, missing ? String(missing) : '✓'), h('span', { class: 'muted' }, missing ? 'eksik gün' : 'eksik gün yok')));
-  add(h('h1', {}, `Merhaba, ${me.name.split(' ')[0]}`), summary, how, host, myTasksCard(w.start, todayIso(), myTasks), manualForm(w.start, myProjects, customers));
+  add(h('h1', {}, `Merhaba, ${me.name.split(' ')[0]}`), summary, how, host, calendarCard(w.start, calStatus, myProjects), myTasksCard(w.start, todayIso(), myTasks), manualForm(w.start, myProjects, customers));
 }
 
 
@@ -567,6 +567,7 @@ const GUIDE = [
   { id: 'hafta', icon: 'calendar', title: 'Haftam', role: 'Herkes', short: 'Haftalık eforunuzu görür, doldurur ve düzeltirsiniz.',
     what: 'Haftam, o haftaki çalışmanızın tamamını tek ekranda gösterir. Üstteki dört kutu haftanın özetidir: toplam saat (günlük 8 saat × 5 gün = 40 saat hedef), haftanın yüzde kaçının tamamlandığı, ekstra mesai saatiniz ve eforu girilmemiş gün sayısı.',
     steps: [
+      ['Takvimden toplantılar: ', 'Takvim bağlantısı açıksa “Takvimimi bağla” ile Outlook / Teams takviminizi bir kez bağlayın (yalnızca kendi takviminiz, salt okuma). “Bu haftanın toplantılarını getir” toplantıları listeler; istediklerinizi seçip proje ve kategori verin, “Seçilenleri efora ekle”ye basın. Süre ve saatler takvimden gelir; eklenmiş toplantı ikinci kez eklenmez.'],
       ['Görevlerim: ', 'Size atanmış Planner görevleri, proje planı görevleri ve açık ITSM biletleri listelenir. Saati yazıp "Ekle"ye basmanız yeter; kayıt hemen haftanıza işlenir.'],
       ['Elle ekle: ', 'Tarih, isteğe bağlı başlangıç ve bitiş saati, süre, kategori, müşteri, proje ve açıklamayı yazıp "Kaydet"e basın. Başlangıç ve bitişi yazarsanız süre kendiliğinden hesaplanır. Müşteri kutusuna yazarken ITSM’deki müşteriler önerilir; listede yoksa "+ müşterisini ekle", projeniz yoksa "+ Yeni proje ekle…" seçin.'],
       ['Dosya ya da asistan: ', 'Kayıtları dosyadan (Dosyadan Ekle) veya yazarak (Asistan) da ekleyebilirsiniz; ikisi de önce size taslak gösterir.'],
@@ -1272,6 +1273,61 @@ function planBlock(p) {
 }
 
 /** "Görevlerim": what I can log effort against, with a quick hours field per task. */
+/**
+ * Calendar meetings as effort: connect the calendar once (read-only, your own calendar), fetch the week's meetings,
+ * tick the ones to add. Nothing is saved before the click, and a meeting already added is shown as added.
+ */
+function calendarCard(weekStart, status, projects) {
+  if (!status?.enabled) return null;
+  const head = h('h2', {}, 'Takvimden toplantılar');
+  if (!status.connected) {
+    return h('div', { class: 'card calcard' }, head,
+      h('p', { class: 'muted' }, 'Outlook / Teams takviminizdeki toplantıları efor olarak ekleyin. Yalnızca kendi takviminiz okunur (salt okuma izni); siz seçip eklemeden hiçbir şey kaydedilmez. Bağlantıyı istediğiniz zaman kaldırabilirsiniz.'),
+      h('a', { class: 'btn pri', href: '/auth/calendar/connect' }, 'Takvimimi bağla'));
+  }
+  const today = todayIso();
+  const weekEnd = addDays(weekStart, 6);
+  const to = weekEnd < today ? weekEnd : today;
+  const out = h('div', {});
+  const fetchBtn = h('button', { class: 'pri', disabled: to < weekStart, onclick: () => guard(out, async () => {
+    fetchBtn.disabled = true; fetchBtn.textContent = 'Takvim okunuyor…';
+    try { draw(await api('GET', `/api/calendar/meetings?from=${weekStart}&to=${to}`)); }
+    finally { fetchBtn.disabled = to < weekStart; fetchBtn.textContent = 'Bu haftanın toplantılarını getir'; }
+  }) }, 'Bu haftanın toplantılarını getir');
+  const draw = (r) => {
+    if (!r.meetings.length) { put(out, h('p', { class: 'muted' }, `${fmtDate(weekStart)} – ${fmtDate(to)} arasında eklenecek toplantı yok.` + (r.skipped ? ` (${r.skipped} olay listelenmedi: iptal, tüm gün, boşta ya da reddedilmiş.)` : ''))); return; }
+    const rows = r.meetings.map((m) => {
+      const box = h('input', { type: 'checkbox', checked: !m.imported, disabled: m.imported, 'aria-label': m.subject });
+      const proj = h('select', { 'aria-label': 'Proje', disabled: m.imported }, h('option', { value: '' }, 'Proje: yok'), projects.map((p) => h('option', { value: p.id, selected: p.id === m.projectId }, p.name)));
+      const cat = h('select', { 'aria-label': 'Kategori', disabled: m.imported }, CATEGORIES.map((c) => h('option', { value: c, selected: c === m.category }, c)));
+      proj.addEventListener('change', () => { if (proj.value && cat.value === 'İç Operasyon') cat.value = 'Proje'; });
+      box.addEventListener('change', () => count());
+      const day = DAYS[(new Date(m.date + 'T00:00:00Z').getUTCDay() + 6) % 7];
+      const tr = h('tr', {}, h('td', {}, box), h('td', {}, `${day} ${fmtDate(m.date).slice(0, 5)}`), h('td', {}, `${m.start}–${m.end}`),
+        h('td', {}, m.subject, h('div', { class: 'muted small' }, [m.online ? 'çevrimiçi' : null, m.organizer, m.attendees ? `${m.attendees} katılımcı` : null].filter(Boolean).join(' · '))),
+        h('td', { class: 'num' }, fmtH(m.hours)), h('td', {}, m.imported ? h('span', { class: 'chip good' }, 'eklendi') : proj), h('td', {}, m.imported ? null : cat));
+      return { m, box, proj, cat, tr };
+    });
+    const addBtn = h('button', { class: 'pri', onclick: () => guard(out, async () => {
+      const items = rows.filter((x) => x.box.checked && !x.m.imported).map((x) => ({ id: x.m.id, projectId: x.proj.value || null, category: x.cat.value || null }));
+      if (!items.length) return;
+      addBtn.disabled = true;
+      const res = await api('POST', '/api/calendar/import', { from: weekStart, to, items });
+      toast(`${res.created} toplantı efora eklendi.`); route();
+    }) }, 'Seçilenleri efora ekle');
+    const count = () => { const n = rows.filter((x) => x.box.checked && !x.m.imported).length; addBtn.textContent = `Seçilenleri efora ekle (${n})`; addBtn.disabled = n === 0; };
+    count();
+    put(out, h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, ...['', 'Gün', 'Saat', 'Toplantı', 'Süre', 'Proje', 'Kategori'].map((x) => h('th', {}, x))), rows.map((x) => x.tr))),
+      h('div', { class: 'row' }, addBtn, r.skipped ? h('span', { class: 'muted small' }, `${r.skipped} olay listelenmedi (iptal, tüm gün, boşta ya da reddedilmiş).`) : null));
+  };
+  return h('div', { class: 'card calcard' }, head,
+    h('p', { class: 'muted' }, to < weekStart ? 'Bu hafta henüz başlamadı.' : `${fmtDate(weekStart)} – ${fmtDate(to)} arasındaki toplantıları getirip istediklerinizi ekleyin. Eklediğiniz toplantı ikinci kez eklenmez.`),
+    h('div', { class: 'row' }, fetchBtn, h('button', { class: 'link-btn', onclick: async () => {
+      if (!confirm('Takvim bağlantısı kaldırılsın mı? Daha önce eklenen eforlar silinmez.')) return;
+      try { await api('DELETE', '/api/calendar'); toast('Takvim bağlantısı kaldırıldı.'); route(); } catch (e) { toast(e.message, 'err'); }
+    } }, 'Bağlantıyı kaldır')), out);
+}
+
 function myTasksCard(weekStart, today, tasks) {
   const card = h('div', { class: 'card' }, h('h2', {}, 'Görevlerim'),
     h('p', { class: 'muted' }, 'Size atanan Planner görevleri ve proje planı görevleri. Saati yazıp "Ekle"ye basın; kayıt hemen haftanıza işlenir.'));

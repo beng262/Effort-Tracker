@@ -26,6 +26,8 @@ const env = z.object({
   SYNC_ENABLED: z.coerce.boolean().default(false),
   SYNC_INTERVAL_MIN: z.coerce.number().default(30),
   SCHEDULER_ENABLED: z.coerce.boolean().default(false),
+  // Calendar meetings as effort (delegated Graph permission Calendars.Read). Off until the app registration has the permission.
+  CALENDAR_ENABLED: z.string().default('').transform((v) => /^(1|true|yes|on)$/i.test(v)),
 
   // ITSM (an ITSM tool). Blank = the connector is off.
   ITSM_BASE_URL: z.string().optional(),

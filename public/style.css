@@ -535,5 +535,10 @@ select[multiple] { padding: 6px; }
 /* plan list: rows hidden by the search box */
 .planrow[hidden] { display: none; }
 
+/* calendar meetings card */
+.calcard .row { margin-top: 8px; }
+.calcard table td.num { text-align: right; }
+.calcard select { max-width: 200px; }
+
 /* text wordmark inside the logo svg */
 .logo text.logo-word { font-family: var(--display, system-ui); letter-spacing: -.01em; }

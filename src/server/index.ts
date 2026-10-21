@@ -1,6 +1,7 @@
 import { createAi } from './ai.js';
 import { buildApp } from './app.js';
 import { createBlobStore } from './blob.js';
+import { createCalendarApi } from './calendar.js';
 import { config } from './config.js';
 import type { Ctx } from './context.js';
 import { pgDb } from './db.js';
@@ -22,7 +23,7 @@ console.log('overtime ready:', await prepareOvertime(db, Number(istanbulNow().da
 const graph = createGraph();
 const vault = createVault();
 const itsm = itsmSetupFromConfig();
-const ctx: Ctx = { db, ai: createAi(), blob: createBlobStore(), vault, itsm, today: () => istanbulNow().date };
+const ctx: Ctx = { db, ai: createAi(), blob: createBlobStore(), vault, itsm, calendar: config.CALENDAR_ENABLED ? createCalendarApi() : undefined, today: () => istanbulNow().date };
 
 // A cheap query every few minutes keeps at least one database connection warm.
 setInterval(() => { void db.query('SELECT 1').catch(() => {}); }, 4 * 60_000).unref();

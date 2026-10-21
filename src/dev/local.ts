@@ -12,6 +12,8 @@ import type { Extraction, ProposedRow } from '../core/types.js';
 import { memoryVault } from '../server/secrets.js';
 import { createEntry, confirmEntries } from '../server/entries.js';
 import { addDays, mondayOf } from '../core/turkish.js';
+import type { CalendarApi, GraphEvent } from '../server/calendar.js';
+import { addDays } from '../core/turkish.js';
 
 const pg = new PGlite({ parsers: { 1700: (v: string) => parseFloat(v), 1082: (v: string) => v } });
 const wrap = (c: any, inTx = false): Db => ({
@@ -110,8 +112,29 @@ await db.query(`INSERT INTO planner_tasks (tenant_id,id,plan_id,bucket,title,ass
   ('dev-tenant','t2','plan1','UAT','UAT testleri','{dev-ayse@example.com}'),
   ('dev-tenant','t3','plan1','Ağ','Faz 2 – Ağ','{dev-mehmet@example.com}')`);
 
+// A pretend calendar: "connecting" is instant, and the week has a handful of meetings (some that are skipped on purpose).
+const demoCalendar: CalendarApi = {
+  authorizeUrl: ({ redirectUri, state }) => `${redirectUri}?code=demo&state=${state}`,
+  exchangeCode: async () => ({ refreshToken: 'demo-refresh', accessToken: 'demo', tid: null, oid: null }),
+  refresh: async () => ({ accessToken: 'demo', refreshToken: 'demo-refresh' }),
+  events: async (_token, from) => {
+    const monday = from.slice(0, 10);
+    const ev = (id: string, day: number, start: string, end: string, subject: string, extra: Partial<GraphEvent> = {}): GraphEvent =>
+      ({ id, subject, isAllDay: false, isCancelled: false, showAs: 'busy', start: { dateTime: `${addDays(monday, day)}T${start}:00.0000000` }, end: { dateTime: `${addDays(monday, day)}T${end}:00.0000000` }, ...extra });
+    return [
+      ev('m1', 0, '10:00', '11:00', 'Lisans Yönetimi haftalık toplantı', { isOnlineMeeting: true, organizer: { emailAddress: { name: 'Cansu' } }, attendees: [{}, {}, {}] }),
+      ev('m2', 1, '14:00', '15:30', 'Müşteri toplantısı: kapsam netleştirme', { isOnlineMeeting: true, organizer: { emailAddress: { name: 'Mehmet' } }, attendees: [{}, {}] }),
+      ev('m3', 2, '09:30', '10:00', 'Günlük stand-up', { isOnlineMeeting: true, attendees: [{}, {}, {}, {}] }),
+      ev('m4', 2, '13:00', '14:00', 'Mimari gözden geçirme'),
+      ev('m5', 3, '11:00', '12:00', 'Eğitim: Entra ID temelleri', { isOnlineMeeting: true }),
+      ev('x1', 1, '09:00', '10:00', 'İptal edilen toplantı', { isCancelled: true }),
+      ev('x2', 3, '00:00', '23:59', 'Resmi izin', { isAllDay: true }),
+    ];
+  },
+};
+
 const store = new Map<string, Buffer>();
-const ctx: Ctx = { db, ai: demoAi, vault: memoryVault(), itsm: { baseUrl: null, tenantId: null, make: () => null }, blob: { put: async (p, d) => { store.set(p, d); }, get: async (p) => store.get(p) ?? Buffer.alloc(0) }, today: () => istanbulNow().date };
+const ctx: Ctx = { db, ai: demoAi, vault: memoryVault(), itsm: { baseUrl: null, tenantId: null, make: () => null }, calendar: demoCalendar, blob: { put: async (p, d) => { store.set(p, d); }, get: async (p) => store.get(p) ?? Buffer.alloc(0) }, today: () => istanbulNow().date };
 // Sample effort for this week (Monday until today), and a few tickets, so the demo opens with something to look at.
 {
   const today = ctx.today();
