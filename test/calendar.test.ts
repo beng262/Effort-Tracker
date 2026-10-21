@@ -67,16 +67,16 @@ describe('calendar meetings as effort', () => {
     expect(r.status).toBe(302);
     expect(new URL(r.headers.get('location')!).searchParams.get('login_hint')).toBe('ayse@x.com');
     // a wrong state is refused and stores nothing
-    const bad = await ayse.call('GET', `/auth/calendar/callback?code=c&state=wrong`, undefined, calCookie);
-    expect(bad.status).toBe(400);
+    const bad = await ayse.call('GET', `/auth/callback?code=c&state=wrong`, undefined, calCookie);
+    expect(bad.status).toBe(403); // not this connection's state: treated as a normal (failed) sign-in
     expect((await db.query('SELECT 1 FROM calendar_connections')).rows).toHaveLength(0);
     // the account that consented must be the signed-in person
     const other = await ayse.connect();
-    expect((await ayse.call('GET', `/auth/calendar/callback?code=bad-account&state=${other.state}`, undefined, other.calCookie)).status).toBe(400);
+    expect((await ayse.call('GET', `/auth/callback?code=bad-account&state=${other.state}`, undefined, other.calCookie)).status).toBe(400);
     expect((await db.query('SELECT 1 FROM calendar_connections')).rows).toHaveLength(0);
     // the real thing
     const ok = await ayse.connect();
-    const done = await ayse.call('GET', `/auth/calendar/callback?code=good&state=${ok.state}`, undefined, ok.calCookie);
+    const done = await ayse.call('GET', `/auth/callback?code=good&state=${ok.state}`, undefined, ok.calCookie);
     expect(done.status).toBe(200);
     const row = (await db.query('SELECT tenant_id, refresh_token FROM calendar_connections')).rows[0];
     expect(row.tenant_id).toBe('tenant-a');
@@ -140,7 +140,7 @@ describe('calendar meetings as effort', () => {
     expect((await db.query('SELECT 1 FROM calendar_connections')).rows).toHaveLength(0);
     failRefresh = false;
     const c = await ayse.connect();
-    await ayse.call('GET', `/auth/calendar/callback?code=good&state=${c.state}`, undefined, c.calCookie);
+    await ayse.call('GET', `/auth/callback?code=good&state=${c.state}`, undefined, c.calCookie);
     expect((await db.query('SELECT 1 FROM calendar_connections')).rows).toHaveLength(1);
     expect((await ayse.call('DELETE', '/api/calendar')).status).toBe(200);
     expect((await db.query('SELECT 1 FROM calendar_connections')).rows).toHaveLength(0);

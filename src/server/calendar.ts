@@ -230,11 +230,39 @@ const sha = (s: string) => createHash('sha256').update(s).digest('base64url');
 const page = (res: Response, ok: boolean, msg: string) =>
   res.status(ok ? 200 : 400).type('html').send(`<!doctype html><meta charset="utf-8"><title>Efor</title>${ok ? '<meta http-equiv="refresh" content="1;url=/#/hafta">' : ''}<body style="font-family:system-ui;max-width:480px;margin:60px auto"><p>${msg.replace(/[<>&"]/g, '')}</p><p><a href="/#/hafta">Efor’a dön</a></p></body>`);
 
+/**
+ * The Microsoft consent page returns to the same redirect URI as sign-in (`/auth/callback`), which is already
+ * registered on the app, so nothing new has to be added there. The sign-in route hands the request over here when
+ * it carries this person's calendar state cookie; anything else is a normal sign-in.
+ */
+export const calendarRedirectUri = () => `${config.PUBLIC_URL}/auth/callback`;
+
+export async function handleCalendarCallback(ctx: Ctx, req: Request, res: Response): Promise<boolean> {
+  const saved = openToken<{ verifier: string; state: string; tenantId: string; employeeId: string }>(parseCookies(req).efor_cal);
+  if (!saved || req.query.state !== saved.state) return false;
+  clearCookie(res, 'efor_cal');
+  try {
+    if (!req.user || !config.CALENDAR_ENABLED || !ctx.calendar) throw new Error('Oturum bulunamadı');
+    if (typeof req.query.error === 'string') throw new Error(`İzin verilmedi: ${String(req.query.error_description ?? req.query.error).slice(0, 300)}`);
+    if (saved.employeeId !== req.user.employeeId || typeof req.query.code !== 'string') throw new Error('Geçersiz bağlantı isteği');
+    const t = await ctx.calendar.exchangeCode({ tenantId: saved.tenantId, code: req.query.code, verifier: saved.verifier, redirectUri: calendarRedirectUri() });
+    // The account that consented has to be this person's account in that tenant.
+    const idn = (await ctx.db.query<{ entra_oid: string | null }>(`SELECT entra_oid FROM identities WHERE employee_id=$1 AND tenant_id=$2`, [req.user.employeeId, saved.tenantId])).rows[0];
+    if ((t.tid && t.tid.toLowerCase() !== saved.tenantId.toLowerCase()) || (t.oid && idn?.entra_oid && t.oid !== idn.entra_oid)) throw new Error('Takvim izni başka bir hesapla verildi. Efor’a giriş yaptığınız hesapla bağlayın.');
+    await saveConnection(ctx.db, req.user.employeeId, saved.tenantId, t.refreshToken);
+    await audit(ctx.db, req.user.employeeId, 'calendar_connect', saved.tenantId);
+    page(res, true, 'Takvim bağlandı. Efor’a yönlendiriliyorsunuz…');
+  } catch (e) {
+    page(res, false, `Takvim bağlanamadı: ${(e as Error).message}`);
+  }
+  return true;
+}
+
 export function calendarRouter(ctx: Ctx): Router {
   const r = Router();
   const on = () => config.CALENDAR_ENABLED && !!ctx.calendar;
   const me = (req: Request) => req.user as User;
-  const redirectUri = () => `${config.PUBLIC_URL}/auth/calendar/callback`;
+  const redirectUri = () => calendarRedirectUri();
 
   r.get('/api/calendar/status', requireUser, wrap(async (req, res) => {
     if (!on()) return void res.json({ enabled: false, connected: false });
@@ -252,25 +280,6 @@ export function calendarRouter(ctx: Ctx): Router {
     const state = randomBytes(16).toString('base64url');
     setCookie(res, 'efor_cal', sealToken({ verifier, state, tenantId: id.tenant_id, employeeId: me(req).employeeId }, 10 * 60 * 1000), 10 * 60 * 1000);
     res.redirect(ctx.calendar!.authorizeUrl({ tenantId: id.tenant_id, state, challenge: sha(verifier), loginHint: id.email, redirectUri: redirectUri() }));
-  }));
-
-  r.get('/auth/calendar/callback', wrap(async (req, res) => {
-    const saved = openToken<{ verifier: string; state: string; tenantId: string; employeeId: string }>(parseCookies(req).efor_cal);
-    clearCookie(res, 'efor_cal');
-    try {
-      if (!req.user || !on()) throw new Error('Oturum bulunamadı');
-      if (typeof req.query.error === 'string') throw new Error(`İzin verilmedi: ${String(req.query.error_description ?? req.query.error).slice(0, 300)}`);
-      if (!saved || saved.employeeId !== req.user.employeeId || req.query.state !== saved.state || typeof req.query.code !== 'string') throw new Error('Geçersiz bağlantı isteği');
-      const t = await ctx.calendar!.exchangeCode({ tenantId: saved.tenantId, code: req.query.code, verifier: saved.verifier, redirectUri: redirectUri() });
-      // The account that consented has to be this person's account in that tenant.
-      const idn = (await ctx.db.query<{ entra_oid: string | null }>(`SELECT entra_oid FROM identities WHERE employee_id=$1 AND tenant_id=$2`, [req.user.employeeId, saved.tenantId])).rows[0];
-      if ((t.tid && t.tid.toLowerCase() !== saved.tenantId.toLowerCase()) || (t.oid && idn?.entra_oid && t.oid !== idn.entra_oid)) throw new Error('Takvim izni başka bir hesapla verildi. Efor’a giriş yaptığınız hesapla bağlayın.');
-      await saveConnection(ctx.db, req.user.employeeId, saved.tenantId, t.refreshToken);
-      await audit(ctx.db, req.user.employeeId, 'calendar_connect', saved.tenantId);
-      page(res, true, 'Takvim bağlandı. Efor’a yönlendiriliyorsunuz…');
-    } catch (e) {
-      page(res, false, `Takvim bağlanamadı: ${(e as Error).message}`);
-    }
   }));
 
   r.delete('/api/calendar', requireUser, wrap(async (req, res) => {

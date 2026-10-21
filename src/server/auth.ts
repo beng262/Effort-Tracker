@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { allowedTenants, config } from './config.js';
 import type { Db } from './db.js';
@@ -54,7 +54,7 @@ export async function resolveEmployee(db: Db, c: EntraClaims): Promise<User> {
 
 const sha = (s: string) => createHash('sha256').update(s).digest('base64url');
 
-export function authRouter(db: Db): Router {
+export function authRouter(db: Db, hooks: { calendar?: (req: Request, res: Response) => Promise<boolean> } = {}): Router {
   const r = Router();
 
   r.get('/auth/mode', (_req, res) => res.json({ mode: config.AUTH_MODE }));
@@ -86,6 +86,8 @@ export function authRouter(db: Db): Router {
       const msg = ok ? 'Yönetici onayı verildi. Şimdi giriş yapabilirsiniz.' : `Yönetici onayı verilmedi: ${String(req.query.error_description ?? req.query.error ?? 'bilinmeyen neden').slice(0, 300)}`;
       return void res.status(ok ? 200 : 400).type('html').send(`<!doctype html><meta charset="utf-8"><title>Effort Tracker</title><body style="font-family:system-ui;max-width:480px;margin:60px auto"><p>${msg.replace(/[<>&"]/g, '')}</p><p><a href="/auth/login">Giriş yap</a></p></body>`);
     }
+    // The calendar connection returns to this same address; it is recognised by its own state cookie.
+    if (hooks.calendar && (await hooks.calendar(req, res))) return;
     try {
       const saved = openToken<{ verifier: string; state: string; nonce: string }>(parseCookies(req).efor_oidc);
       clearCookie(res, 'efor_oidc');
