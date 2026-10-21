@@ -132,7 +132,7 @@ function toast(text, kind = 'ok', action = null) {
 // [route id, label, minimum role, icon]
 const ROUTES = [
   ['hafta', 'Haftam', 'Employee', 'calendar'], ['dosya', 'Dosyadan Ekle', 'Employee', 'filePlus'], ['asistan', 'Asistan', 'Employee', 'sparkles'],
-  ['biletler', 'Biletler', 'Employee', 'ticket'], ['raporlar', 'Raporlar', 'Employee', 'chart'], ['projeler', 'Projeler', 'PM', 'folder'], ['yonetim', 'Yönetim', 'Admin', 'shield'], ['rehber', 'Rehber', 'Employee', 'info'],
+  ['biletler', 'Biletler', 'Employee', 'ticket'], ['raporlar', 'Raporlar', 'Employee', 'chart'], ['projeler', 'Projeler', 'PM', 'folder'], ['projedosyalari', 'Proje Dosyaları', 'Employee', 'paperclip'], ['yonetim', 'Yönetim', 'Admin', 'shield'], ['rehber', 'Rehber', 'Employee', 'info'],
 ];
 // Old bookmarks keep working after the renames.
 const ALIAS = { yukle: 'dosya', sohbet: 'asistan' };
@@ -186,7 +186,7 @@ function route() {
   let [, page = 'hafta', arg] = location.hash.split('/');
   page = ALIAS[page] || page;
   renderNav(page === 'inceleme' ? 'dosya' : page);
-  const pages = { biletler: ticketsPage, hafta: weekPage, dosya: dosyaPage, inceleme: reviewPage, asistan: asistanPage, raporlar: reportsPage, projeler: projectsPage, yonetim: adminPage, rehber: guidePage };
+  const pages = { biletler: ticketsPage, hafta: weekPage, dosya: dosyaPage, inceleme: reviewPage, asistan: asistanPage, raporlar: reportsPage, projeler: projectsPage, projedosyalari: projectFilesPage, yonetim: adminPage, rehber: guidePage };
   app.replaceChildren();
   (pages[page] || weekPage)(arg)
     .then(() => addIntro(page))
@@ -201,6 +201,7 @@ const INTRO = {
   biletler: 'ITSM sistemindeki (ITSM) açık biletler: kim, hangi müşteri için, hangi durumda ve ne kadardır açık. Çalışanlar kendi biletlerini, proje yöneticileri ekiplerinin, yöneticiler herkesin biletlerini görür. Bilet numarasını efor satırına yazarsanız (örn. #3951) efor o bilete bağlanır.',
   raporlar: 'Hazır ya da kendi oluşturduğunuz raporlarla eforu kişi, proje, müşteri veya görev bazında görün; Excel ya da PDF olarak indirin, e-postayla zamanlayın.',
   projeler: 'Projeleri, ekiplerini ve planlarını yönetin. Planner planı bağlayın, Excel proje planını aktarın ya da planı yapay zekâ asistanıyla güncelleyin.',
+  projedosyalari: 'Projenin tüm dosyaları tek yerde: ekip üyeleri dosya ekler, indirir; yükleyen, projeyi oluşturan ya da yönetici siler.',
   rehber: 'Her sayfanın ne işe yaradığını ve nasıl kullanılacağını adım adım anlatır.',
   yonetim: 'Kişileri, rollerini ve ikinci hesaplarını yönetin; dönem kapatın; sistem durumunu ve denetim kaydını izleyin.',
 };
@@ -698,6 +699,16 @@ const GUIDE = [
       ['Silme: ', '"Planı sil" yalnızca plan görevlerini, "Projeyi sil" projeyi listelerden kaldırır. Girilen efor ve raporlar her durumda korunur.'],
     ],
     tips: ['Yeni bir projeyi çalışanlar da eforlarını girerken ("+ Yeni proje ekle…") açabilir; açan kişi projenin ekibine eklenir.'] },
+  { id: 'projedosyalari', icon: 'paperclip', title: 'Proje Dosyaları', role: 'Herkes (kendi projeleri)', short: 'Projenin tüm dosyalarını tek yerde saklayın, indirin.',
+    what: 'Her projenin kendi dosya alanı vardır: teklifler, kapsam dokümanları, toplantı notları, tablolar. Projedeki herkes (ve proje yöneticileri ile yöneticiler) dosyaları görür, ekler ve indirir. Dosyalar güvenli depoda tutulur; sayfada açılmaz, her zaman indirilir.',
+    steps: [
+      ['Projeyi seçin: ', 'Üstteki listeden projenizi seçin. Proje yöneticileri aynı alanı Projeler sayfasında, projenin içinde de görür.'],
+      ['Dosya ekleyin: ', '"Dosya ekle"ye basın ya da dosyaları sayfaya sürükleyip bırakın. Bir seferde en fazla 10 dosya, her biri en çok 25 MB. İsterseniz kısa bir not yazın.'],
+      ['İndirin: ', 'Dosya adına ya da "İndir"e basın.'],
+      ['Silin: ', 'Dosyayı yükleyen, projeyi oluşturan proje yöneticisi ve yöneticiler silebilir; silinen dosya depodan da kaldırılır.'],
+      ['Asistandan: ', 'Asistana efor dosyası eklerken proje seçip "Projenin dosyalarına da ekle"yi işaretlerseniz dosyanın bir kopyası burada da saklanır.'],
+    ],
+    tips: ['Aynı içerikteki dosya aynı projeye iki kez eklenmez; bunu size söyler.', 'Dosya adı ya da içeriği hiçbir şekilde sayfa olarak çalıştırılmaz.'] },
   { id: 'yonetim', icon: 'shield', title: 'Yönetim', role: 'Yalnızca yönetici', short: 'Kişiler, roller, bağlantılar, tatiller ve sistem durumu.',
     what: 'Uygulamanın ayarlarını yönettiğiniz sayfadır.',
     steps: [
@@ -823,10 +834,13 @@ async function asistanPage() {
   const fileChip = h('div', { class: 'filechip', hidden: true });
   const projPick = h('select', { 'aria-label': 'Dosyanın projesi', title: 'Bu dosya hangi projeye ait?' },
     h('option', { value: '' }, 'Proje: otomatik bul'), myProjects.map((p) => h('option', { value: p.id }, p.name)));
+  const saveBox = h('input', { type: 'checkbox', 'aria-label': 'Projenin dosyalarına da ekle' });
+  const saveLabel = h('label', { class: 'savetoproj', hidden: true, title: 'Dosyanın bir kopyası projenin dosya alanına da konur' }, saveBox, 'Projenin dosyalarına da ekle');
+  projPick.addEventListener('change', () => { saveLabel.hidden = !projPick.value; if (!projPick.value) saveBox.checked = false; });
   const showFile = () => {
-    if (!pendingFile) { fileChip.hidden = true; fileChip.replaceChildren(); projPick.value = ''; return; }
+    if (!pendingFile) { fileChip.hidden = true; fileChip.replaceChildren(); projPick.value = ''; saveBox.checked = false; saveLabel.hidden = true; return; }
     fileChip.hidden = false;
-    put(fileChip, icon('paperclip', 15), h('span', {}, pendingFile.name), myProjects.length ? projPick : null, h('button', { class: 'x', title: 'Dosyayı kaldır', 'aria-label': 'Dosyayı kaldır', onclick: () => { pendingFile = null; showFile(); } }, '×'));
+    put(fileChip, icon('paperclip', 15), h('span', {}, pendingFile.name), myProjects.length ? projPick : null, saveLabel, h('button', { class: 'x', title: 'Dosyayı kaldır', 'aria-label': 'Dosyayı kaldır', onclick: () => { pendingFile = null; showFile(); } }, '×'));
   };
 
   const input = h('textarea', { rows: 1, class: 'grow', placeholder: 'Ne yaptığınızı yazın ya da bir soru sorun…', 'aria-label': 'Mesajınız' });
@@ -866,7 +880,7 @@ async function asistanPage() {
     hero.remove();
     addMsg('user', (f ? `📎 ${f.name}${projectName ? ` (Proje: ${projectName})` : ''}\n` : '') + text);
     input.value = ''; autosize(); pendingFile = null; showFile();
-    const fd = new FormData(); fd.set('message', text); if (conversationId) fd.set('conversationId', conversationId); if (f) fd.set('file', f); if (projectId) fd.set('projectId', projectId);
+    const fd = new FormData(); fd.set('message', text); if (conversationId) fd.set('conversationId', conversationId); if (f) fd.set('file', f); if (projectId) fd.set('projectId', projectId); if (projectId && saveBox.checked) fd.set('saveToProject', '1');
     sendBtn.disabled = true;
     const typing = h('div', { class: 'msg assistant' }, avatar(), h('div', { class: 'bubble typing' }, h('i'), h('i'), h('i')));
     list.append(typing); list.scrollTop = list.scrollHeight;
@@ -1155,6 +1169,80 @@ async function projectsPage(openId) {
   add(h('div', { class: 'row' }, h('h1', { class: 'grow' }, 'Projeler'), sync), guide, newBox, h('div', { class: 'pgrid' }, cards));
 }
 
+/* ---------- project files ---------- */
+
+const fmtSize = (b) => (b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1).replace('.', ',')} MB`);
+
+/** A project's storage place: add files (several at once, or drop them here), download, delete. Used on the project page and on "Proje Dosyaları". */
+function filesBlock(p) {
+  const host = h('div', { class: 'filesblock' });
+  const list = h('div', {});
+  const status = h('div', { class: 'muted small' });
+  const note = h('input', { placeholder: 'Not (isteğe bağlı)', class: 'grow', 'aria-label': 'Dosya notu' });
+  const picker = h('input', { type: 'file', multiple: true, hidden: true, onchange: () => { const f = [...picker.files]; picker.value = ''; upload(f); } });
+  const base = `/api/projects/${p.id}/files`;
+
+  const load = async () => {
+    let files;
+    try { files = await api('GET', base); } catch (e) { put(list, msg('err', e.message)); return; }
+    if (!files.length) { put(list, h('p', { class: 'muted' }, 'Henüz dosya yok. “Dosya ekle”ye basın ya da dosyaları bu alana bırakın.')); return; }
+    const total = files.reduce((s2, f) => s2 + f.size, 0);
+    put(list, h('div', { class: 'muted small' }, `${files.length} dosya · ${fmtSize(total)}`),
+      h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, ...['Ad', 'Not', 'Boyut', 'Ekleyen', 'Tarih', ''].map((x, i) => h('th', { class: i === 2 ? 'num' : '' }, x))),
+        files.map((f) => h('tr', {},
+          h('td', {}, h('a', { href: `${base}/${f.id}/download`, download: f.name }, f.name)),
+          h('td', { class: 'muted' }, f.note || ''),
+          h('td', { class: 'num' }, fmtSize(f.size)),
+          h('td', {}, f.uploader),
+          h('td', {}, fmtDate(String(f.uploadedAt).slice(0, 10))),
+          h('td', {}, h('a', { class: 'btn', href: `${base}/${f.id}/download`, download: f.name }, 'İndir'), ' ',
+            f.canDelete ? h('button', { class: 'danger', onclick: async () => {
+              if (!confirm(`“${f.name}” silinsin mi? Dosya depodan da kaldırılır.`)) return;
+              try { await api('DELETE', `${base}/${f.id}`); toast('Dosya silindi.'); load(); } catch (e) { toast(e.message, 'err'); }
+            } }, 'Sil') : null))))));
+  };
+
+  const upload = async (files) => {
+    if (!files.length) return;
+    let added = 0; const skipped = [];
+    for (let i = 0; i < files.length; i++) {
+      put(status, h('span', { class: 'working' }, h('span', { class: 'spinner' }), `${i + 1} / ${files.length}: ${files[i].name} yükleniyor…`));
+      const fd = new FormData(); fd.append('file', files[i]); if (note.value.trim()) fd.set('note', note.value.trim());
+      try { const r = await api('POST', base, fd); added += r.added.length; skipped.push(...r.skipped.map((x) => `${x.name}: ${x.reason}`)); }
+      catch (e) { skipped.push(`${files[i].name}: ${e.message}`); }
+    }
+    put(status, skipped.length ? msg('err', skipped.join(' · ')) : null);
+    if (added) { toast(`${added} dosya eklendi.`); note.value = ''; }
+    load();
+  };
+
+  // Drop files anywhere on the block.
+  for (const ev of ['dragenter', 'dragover']) host.addEventListener(ev, (e) => { e.preventDefault(); host.classList.add('over'); });
+  for (const ev of ['dragleave', 'drop']) host.addEventListener(ev, (e) => { e.preventDefault(); host.classList.remove('over'); });
+  host.addEventListener('drop', (e) => upload([...(e.dataTransfer?.files || [])]));
+
+  host.append(h('div', { class: 'row' }, h('strong', { class: 'grow' }, 'Proje dosyaları'), note, h('button', { class: 'pri', onclick: () => picker.click() }, icon('upload', 16), 'Dosya ekle'), picker),
+    h('div', { class: 'muted small' }, 'Dosyaları sürükleyip bırakabilirsiniz; bir seferde en fazla 10 dosya, her biri en çok 25 MB. Projedeki herkes görür ve indirir.'), status, list);
+  load();
+  return host;
+}
+
+/** "Proje Dosyaları": every person sees the files of the projects they are on. */
+async function projectFilesPage() {
+  const projects = await api('GET', '/api/projects');
+  if (!projects.length) { add(h('h1', {}, 'Proje dosyaları'), h('p', { class: 'muted' }, 'Size atanmış bir proje yok. Proje yöneticiniz sizi bir projeye eklediğinde dosyaları burada görürsünüz.')); return; }
+  let last = null; try { last = sessionStorage.getItem('efor.fileproj'); } catch { /* optional */ }
+  const sel = h('select', { 'aria-label': 'Proje' }, projects.map((p) => h('option', { value: p.id, selected: p.id === last }, p.customer ? `${p.name} · ${p.customer}` : p.name)));
+  const body = h('div', { class: 'card' });
+  const show = () => {
+    try { sessionStorage.setItem('efor.fileproj', sel.value); } catch { /* optional */ }
+    body.replaceChildren(filesBlock(projects.find((x) => x.id === sel.value)));
+  };
+  sel.addEventListener('change', show);
+  add(h('h1', {}, 'Proje dosyaları'), h('div', { class: 'row' }, h('label', { class: 'fld' }, h('span', { class: 'muted small' }, 'Proje'), sel)), body);
+  show();
+}
+
 function projectCardTile(p) {
   const n = (p.members || []).length;
   const chip = (t, cls = '') => h('span', { class: 'chip ' + cls }, t);
@@ -1197,6 +1285,7 @@ function projectDetail(p, people, customers = []) {
       h('div', { class: 'muted' }, [p.code, p.customer, ...(p.plans || []).map((x) => 'Plan: ' + (x.title || x.planId))].filter(Boolean).join(' · ')),
       plannerBlock(p),
       planBlock(p),
+      filesBlock(p),
       h('strong', {}, 'Ekip'), list,
       h('div', { class: 'row' },
         h('button', { class: 'pri', onclick: async (ev) => {

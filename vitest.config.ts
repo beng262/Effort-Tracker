@@ -5,6 +5,7 @@ export default defineConfig({
     env: {
       AUTH_MODE: 'dev',
       CALENDAR_ENABLED: '1',
+      PROJECT_FILE_MAX_MB: '1',
       SESSION_SECRET: 'test-secret',
       ALLOWED_TENANTS: 'tenant-a:Alpha:alpha.example.com,tenant-b:Beta:beta.example.com',
     },

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authRouter } from './auth.js';
 import { calendarRouter, handleCalendarCallback } from './calendar.js';
+import { projectFilesRouter } from './projectFiles.js';
 import type { Ctx } from './context.js';
 import type { Graph } from './graph.js';
 import { apiRouter } from './routes.js';
@@ -27,6 +28,7 @@ export function buildApp(ctx: Ctx, graph: Graph): Express {
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.use(authRouter(ctx.db, { calendar: (req, res) => handleCalendarCallback(ctx, req, res) }));
   app.use(calendarRouter(ctx));
+  app.use(projectFilesRouter(ctx));
   app.use(apiRouter(ctx, graph));
   const here = dirname(fileURLToPath(import.meta.url));
   serveFront(app, join(here, '..', '..', 'public'));

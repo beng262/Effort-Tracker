@@ -18,6 +18,7 @@ import { openTickets, ticketVisible } from './workload.js';
 import { recomputeDate, workWindow } from './overtime.js';
 import { currentItsmKey, forgetItsmKey, loadItsm, runItsmSync } from './itsm.js';
 import { addCustomer, listCustomers } from './customers.js';
+import { addProjectFile } from './projectFiles.js';
 import { archiveProject, deletePlanTask, deleteWholePlan, listPlan, patchPlanTask, unlinkPlannerPlan, proposePlanEdit, stagePlanImport, stagePlannerImport } from './plans.js';
 import { candidatesFor, confirmUpload, DuplicateUploadError, UnreadableFileError, NotConfirmable, processUpload } from './pipeline.js';
 import { definitionSchema, presetsFor, PRESETS, runReport } from './reports.js';
@@ -707,7 +708,10 @@ export function apiRouter(ctx: Ctx, graph: Graph): Router {
       // The person can say which project an attached file belongs to; every row of it is then linked to that project.
       const projectId = typeof req.body.projectId === 'string' && req.body.projectId ? uuid.parse(req.body.projectId) : null;
       if (projectId) await assertAssigned(u, projectId);
-      if (req.file) attached = await chatFile(ctx, u, cid, Buffer.from(req.file.originalname, 'latin1').toString('utf8'), req.file.buffer, text, projectId);
+      const fileName = req.file ? Buffer.from(req.file.originalname, 'latin1').toString('utf8') : '';
+      if (req.file) attached = await chatFile(ctx, u, cid, fileName, req.file.buffer, text, projectId);
+      // "Projenin dosyalarına da ekle": keep the file on the project as well (a copy already there is not stored twice).
+      if (req.file && projectId && req.body.saveToProject === '1') await addProjectFile(ctx, u, projectId, fileName, req.file.buffer).catch(() => { /* the rows were read; keeping the copy is best-effort */ });
       if (attached && !text.trim()) return void res.json({ conversationId: cid, ...attached });
       const turn = await chatTurn(ctx, u, cid, text || 'Dosyayı yükledim.', attached?.cards ?? []);
       res.json({ conversationId: cid, reply: turn.reply, cards: [...(attached?.cards ?? []), ...turn.cards.filter((c) => !attached?.cards.includes(c))] });

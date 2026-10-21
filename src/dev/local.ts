@@ -11,6 +11,7 @@ import { istanbulNow } from '../server/scheduler.js';
 import type { Extraction, ProposedRow } from '../core/types.js';
 import { memoryVault } from '../server/secrets.js';
 import { createEntry, confirmEntries } from '../server/entries.js';
+import { addProjectFile } from '../server/projectFiles.js';
 import { addDays, mondayOf } from '../core/turkish.js';
 import type { CalendarApi, GraphEvent } from '../server/calendar.js';
 import { addDays } from '../core/turkish.js';
@@ -134,7 +135,7 @@ const demoCalendar: CalendarApi = {
 };
 
 const store = new Map<string, Buffer>();
-const ctx: Ctx = { db, ai: demoAi, vault: memoryVault(), itsm: { baseUrl: null, tenantId: null, make: () => null }, calendar: demoCalendar, blob: { put: async (p, d) => { store.set(p, d); }, get: async (p) => store.get(p) ?? Buffer.alloc(0) }, today: () => istanbulNow().date };
+const ctx: Ctx = { db, ai: demoAi, vault: memoryVault(), itsm: { baseUrl: null, tenantId: null, make: () => null }, calendar: demoCalendar, blob: { put: async (p, d) => { store.set(p, d); }, get: async (p) => store.get(p) ?? Buffer.alloc(0), remove: async (p) => { store.delete(p); } }, today: () => istanbulNow().date };
 // Sample effort for this week (Monday until today), and a few tickets, so the demo opens with something to look at.
 {
   const today = ctx.today();
@@ -170,6 +171,15 @@ const ctx: Ctx = { db, ai: demoAi, vault: memoryVault(), itsm: { baseUrl: null, 
     ('4101','dev-tenant','VPN bağlantısı kopuyor','Acme','ayse@example.com','Açık', now() - interval '3 days'),
     ('4102','dev-tenant','Paylaşımlı posta kutusu izinleri','Acme','ayse@example.com','Devam Ediyor', now() - interval '6 days'),
     ('4103','dev-tenant','Yeni kullanıcı hesabı talebi','Acme','mehmet@example.com','Açık', now() - interval '1 day')`);
+}
+// Sample files on the demo project (the bytes are short pretend documents).
+{
+  const pm = { employeeId: cansu, name: 'Cansu (PM)', email: 'cansu@example.com', role: 'PM', dayHours: 8 } as const;
+  const member = { employeeId: ayse, name: 'Ayşe', email: 'ayse@example.com', role: 'Employee', dayHours: 8 } as const;
+  await addProjectFile(ctx, pm, proj, 'Kapsam Dokümanı v2.pdf', Buffer.from('Kapsam dokümanı (demo içeriği)'), 'müşteriyle onaylanan sürüm');
+  await addProjectFile(ctx, member, proj, 'Teklif.xlsx', Buffer.from('Teklif tablosu (demo içeriği)'), 'birim fiyatlar dahil');
+  await addProjectFile(ctx, member, proj, 'Toplantı notları 19.10.md', Buffer.from('Toplantı notları: kapsam netleşti'));
+  await addProjectFile(ctx, pm, proj, 'Mimari şema.png', Buffer.from('şema (demo içeriği)'), 'yüksek seviye mimari');
 }
 const port = Number(process.env.PORT ?? 3100);
 buildApp(ctx, { get: async () => { throw new Error('Demo kipinde Microsoft Graph bağlı değil'); } }).listen(port, () => console.log(`Efor demo on http://localhost:${port} (dev login: cansu@example.com PM, ayse@example.com, admin@example.com Admin)`));

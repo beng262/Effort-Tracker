@@ -26,6 +26,8 @@ const env = z.object({
   SYNC_ENABLED: z.coerce.boolean().default(false),
   SYNC_INTERVAL_MIN: z.coerce.number().default(30),
   SCHEDULER_ENABLED: z.coerce.boolean().default(false),
+  // Largest single file a person can add to a project, in megabytes.
+  PROJECT_FILE_MAX_MB: z.coerce.number().positive().default(25),
   // Calendar meetings as effort (delegated Graph permission Calendars.Read). Off until the app registration has the permission.
   CALENDAR_ENABLED: z.string().default('').transform((v) => /^(1|true|yes|on)$/i.test(v)),
 

@@ -548,5 +548,16 @@ tr.editrow > td { background: var(--surface-2, #f4f7fa); padding: 12px; }
 .entry-edit .fld select, .entry-edit .fld input { max-width: 240px; }
 .calcard td input.grow { min-width: 220px; width: 100%; }
 
+/* project files */
+.filesblock { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); margin-top: 6px; }
+.filesblock.over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+.filesblock .row { align-items: center; flex-wrap: wrap; }
+.filesblock td.num, .filesblock th.num { text-align: right; white-space: nowrap; }
+.card > .filesblock:first-child, .filesblock:only-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.savetoproj { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.savetoproj[hidden] { display: none; }
+
+.fld { display: grid; gap: 3px; }
+
 /* text wordmark inside the logo svg */
 .logo text.logo-word { font-family: var(--display, system-ui); letter-spacing: -.01em; }
